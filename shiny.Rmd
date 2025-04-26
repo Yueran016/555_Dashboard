@@ -1,0 +1,357 @@
+---
+title: "shiny output"
+author: "Yueran Cao"
+date: "2025-03-08"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+options(install.packages.check.source = "no")
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+```
+
+
+```{r, results = "hide"}
+##run plot
+#original dataset
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+feature_table <- readRDS("data/data17")
+cols_meta <- 2
+df <- feature_table[, -c(1:cols_meta)]
+df_ft<- cbind(feature_table[, 1:cols_meta] , df)
+metadata <- feature_table[, 1:cols_meta]
+
+
+#randomly assign sample types 
+sample_types <- c("S1", "S2", "S3", "S4")
+metadata$Sample_type <- sample(sample_types, nrow(metadata), replace = TRUE)
+
+
+# 
+install.packages("missMDA")
+library(missMDA)
+
+# PCA analysis
+imputed_data <- imputePCA(df, ncp = 2)  
+df_imputed <- imputed_data$completeObs 
+
+pca_result <- prcomp(df_imputed, scale = TRUE)
+pca_nc <- data.frame(pca_result$x)  
+pca_nc <- pca_nc %>%
+  mutate(sum_sample_int = rowSums(df_imputed))
+
+
+pca_nc <- cbind(pca_nc, metadata)  # combine batch information
+
+# ANOVA analysis
+pc1_anova_nc <- summary(aov(PC1 ~ batch, data = pca_nc))
+pc2_anova_nc <- summary(aov(PC2 ~ batch, data = pca_nc))
+int_anova_nc <- summary(aov(sum_sample_int ~ batch, data = pca_nc))
+
+
+# Determine the number of unique batches 
+batch_num <- length(unique(metadata$batch))
+
+# Set up color indices for the plots 
+if(batch_num < 9) { 
+  color_index <- brewer.pal(8, "Dark2")[1:batch_num] 
+  } else { 
+    color_index <- rep(brewer.pal(8, "Dark2"), 100)[1:batch_num] } 
+
+# Print the color indices 
+print(color_index)
+
+# Ensure necessary libraries are loaded
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+library(ggplot2)
+
+# Initialize plot list
+p <- list()
+
+# Plot 1: Sum Intensity for All Samples
+
+p[[1]] <- ggplot(pca_nc, aes(y = sum_sample_int, x = 1:length(sum_sample_int), fill = as.factor(batch))) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = color_index) +
+  labs(x = "Sample number", y = "Sum Intensity", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("Sum intensity for all samples; p=", round(int_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 2: PC1 vs PC2 Colored by Batch
+p[[2]] <- ggplot(pca_nc, aes(x = PC1, y = PC2, color = as.factor(batch))) +
+  geom_point() +
+  scale_color_manual(values = color_index) +
+  ggtitle("PC1 vs PC2") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 3: PC1 Scores by Batch
+p[[3]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC1, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC1", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC1 Scores; p=", round(pc1_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 4: PC2 Scores by Batch
+p[[4]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC2, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC2", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC2 Scores; p=", round(pc2_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Assign colors to sample types
+color_index2<- brewer.pal(8, "Dark2")[1:length(unique(pca_nc$Sample_type))]
+# Create Plot 5: PC1 vs PC2 Colored by Sample Type
+p[[5]] <- ggplot(pca_nc, aes(x = PC1, y = PC2, color = Sample_type)) +
+    geom_point() +
+    scale_color_manual(values = color_index2) +
+    ggtitle("PC1 vs PC2 by Sample Type") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r,results='hide'}
+##Modify zero
+# Load necessary library
+library(dplyr)
+
+df_ft[, 3:152] <- apply(df_ft[, 3:152], 2, as.numeric)
+summary(df_ft[, 3:152])
+
+
+# calculate 10% & 25% quantile
+threshold_10 <- apply(df_ft[, 3:152], 2, function(x) quantile(x, 0.10, na.rm = TRUE))
+df_10 <- df_ft
+for (i in 3:152) {
+  df_10[, i] <- ifelse(df_10[, i] < threshold_10[i-2], 0, df_10[, i])
+}
+
+summary(df_10[, 3:152])
+saveRDS(df_10, "data/df_10")
+
+threshold_25 <- apply(df_ft[, 3:152], 2, function(x) quantile(x, 0.25, na.rm = TRUE))
+df_25 <- df_ft
+for (i in 3:152) {
+  df_25[, i] <- ifelse(df_25[, i] < threshold_25[i-2], 0, df_25[, i])
+}
+saveRDS(df_25, "data/df_25")
+```
+
+```{r,results='hide'}
+##10% dataset
+df <- df_10
+df <- df[, sapply(df, is.numeric)]
+# PCA analysis
+imputed_data <- imputePCA(df, ncp = 2)  
+df_imputed <- imputed_data$completeObs 
+
+pca_result <- prcomp(df_imputed, scale = TRUE)
+pca_nc <- data.frame(pca_result$x)  
+pca_nc <- pca_nc %>%
+  mutate(sum_sample_int = rowSums(df_imputed))
+
+
+pca_nc <- cbind(pca_nc, metadata)  # combine batch information
+
+# ANOVA analysis
+pc1_anova_nc <- summary(aov(PC1 ~ batch, data = pca_nc))
+pc2_anova_nc <- summary(aov(PC2 ~ batch, data = pca_nc))
+int_anova_nc <- summary(aov(sum_sample_int ~ batch, data = pca_nc))
+# Initialize plot list
+t <- list()
+
+# Plot 1: Sum Intensity for All Samples
+
+t[[1]] <- ggplot(pca_nc, aes(y = sum_sample_int, x = 1:length(sum_sample_int), fill = as.factor(batch))) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = color_index) +
+  labs(x = "Sample number", y = "Sum Intensity", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("Sum intensity for all samples; p=", round(int_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 2: PC1 vs PC2 Colored by Batch
+t[[2]] <- ggplot(pca_nc, aes(x = PC1, y = PC2, color = as.factor(batch))) +
+  geom_point() +
+  scale_color_manual(values = color_index) +
+  ggtitle("PC1 vs PC2") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 3: PC1 Scores by Batch
+t[[3]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC1, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC1", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC1 Scores; p=", round(pc1_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 4: PC2 Scores by Batch
+t[[4]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC2, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC2", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC2 Scores; p=", round(pc2_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r,results='hide'}
+##25% zero
+df <- df_10
+df <- df[, sapply(df, is.numeric)]
+# PCA analysis
+imputed_data <- imputePCA(df, ncp = 2)  
+df_imputed <- imputed_data$completeObs 
+
+pca_result <- prcomp(df_imputed, scale = TRUE)
+pca_nc <- data.frame(pca_result$x)  
+pca_nc <- pca_nc %>%
+  mutate(sum_sample_int = rowSums(df_imputed))
+
+
+pca_nc <- cbind(pca_nc, metadata)  # combine batch information
+
+# ANOVA analysis
+pc1_anova_nc <- summary(aov(PC1 ~ batch, data = pca_nc))
+pc2_anova_nc <- summary(aov(PC2 ~ batch, data = pca_nc))
+int_anova_nc <- summary(aov(sum_sample_int ~ batch, data = pca_nc))
+# Initialize plot list
+s <- list()
+
+# Plot 1: Sum Intensity for All Samples
+
+s[[1]] <- ggplot(pca_nc, aes(y = sum_sample_int, x = 1:length(sum_sample_int), fill = as.factor(batch))) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = color_index) +
+  labs(x = "Sample number", y = "Sum Intensity", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("Sum intensity for all samples; p=", round(int_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 2: PC1 vs PC2 Colored by Batch
+s[[2]] <- ggplot(pca_nc, aes(x = PC1, y = PC2, color = as.factor(batch))) +
+  geom_point() +
+  scale_color_manual(values = color_index) +
+  ggtitle("PC1 vs PC2") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 3: PC1 Scores by Batch
+s[[3]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC1, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC1", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC1 Scores; p=", round(pc1_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot 4: PC2 Scores by Batch
+s[[4]] <- ggplot(pca_nc, aes(x = as.factor(batch), y = PC2, color = as.factor(batch))) +
+  geom_jitter(position = position_dodge(0.8)) +
+  scale_color_manual(values = color_index) +
+  labs(x = "Batch Number", y = "PC2", size = 20) +
+  guides(fill = guide_legend(title = "Batch Number")) +
+  ggtitle(label = paste("PC2 Scores; p=", round(pc2_anova_nc[[1]]$`Pr(>F)`[1], 4), sep = " ")) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+#install
+install.packages("plotly")
+install.packages("shiny")
+library(plotly)
+library(shiny)
+```
+
+
+```{r last_chunk, echo = FALSE, results="show",message=FALSE}
+##Interactive plot
+# change ggplot to plotly
+plist_interactive <- lapply(p, plotly::ggplotly)
+tlist_interactive <- lapply(t, plotly::ggplotly)
+slist_interactive <- lapply(s, plotly::ggplotly)
+
+# UI
+ui <- fluidPage(
+  titlePanel("Interactive Plot Selector"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # panel
+      selectInput("data_choice", "Select data group:",
+                  choices = c("original data" = "p", 
+                              "10% zero data" = "t", 
+                              "25% zero data" = "s")),
+      
+      # buton
+      actionButton("plot1", "sum intensity"),
+      actionButton("plot2", "PC1 vs PC2"),
+      actionButton("plot3", "PC1"),
+      actionButton("plot4", "PC2")
+    ),
+    
+    mainPanel(
+      # display
+      plotlyOutput("selected_plot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output, session) {
+  
+  # store via reactiveVal
+  current_plot <- reactiveVal(1)
+  
+  # upload display
+  selected_data <- reactive({
+    if(input$data_choice == "p") {
+      return(p)
+    } else if(input$data_choice == "t") {
+      return(t)
+    } else {
+      return(s)
+    }
+  })
+  
+  # upload chosen plot
+  observeEvent(input$plot1, {
+    current_plot(1)
+  })
+  
+  observeEvent(input$plot2, {
+    current_plot(2)
+  })
+  
+  observeEvent(input$plot3, {
+    current_plot(3)
+  })
+  
+  observeEvent(input$plot4, {
+    current_plot(4)
+  })
+  
+  
+  output$selected_plot <- renderPlotly({
+    selected_data()[[current_plot()]]
+  })
+}
+
+# run shinny
+shinyApp(ui = ui, server = server)
+library(htmlwidgets)
+```
+[View Source Code on GitHub](https://github.com/Yueran016/555_Dashboard)
+
+##This presents three different data processing methods: Original Data, 10% Zero Data, and 25% Zero Data. Each data group is displayed through four types of plots: Sum Intensity, PC1 vs PC2, PC1 Distribution, and PC2 Distribution. These plots aim to help the reader understand the impact of different missing data treatments on data analysis and principal component analysis results, and further explore how missing data influences the overall data structure.
