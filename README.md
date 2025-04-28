@@ -1,25 +1,20 @@
-# Impact of Missing Data on PCA Dashboard
+#Impact of study
+Instrument detection limits introduce varying degrees of left-censored zeros that 
+can distort data distributions and undermine the effectiveness of batch effect correction. 
+This dashboard empowers researchers to interactively assess how different zero-inflation 
+thresholds impact batch correction outcomes, enabling more robust preprocessing choices 
+and more reliable downstream analyses.
 
-## Overview
-This repository contains two components:
-- **Interactive Plotting (`interactive_plot.R`)**: Static exploratory plots analyzing the effects of missing data on PCA results.
-- **Interactive Dashboard (`shiny.Rmd`)**: A Shiny dashboard allowing users to interactively explore PCA results based on different missing data treatments.
+# How to Run the Dashboard
 
-The project demonstrates how different levels of missingness (zero values) can impact principal component analysis outcomes, providing insights for preprocessing strategies.
+1. Install the required packages:
 
-## Repository Structure
-- `data/data17`: Simulated small molecule feature dataset (included for reproducibility)
-- `interactive_plot.R`: Static plotting and data exploration script
-- `shiny.Rmd`: Shiny dashboard with interactive widgets
-- `README.md`: This file
+```r
+install.packages(c("shiny", "shinydashboard", "plotly", "dplyr", "ggplot2", "RColorBrewer", "missMDA"))
+```
+2. Run the first section of app.R to load data and prepare interactive objects.
 
-## Project Importance
-Visualizing the impact of missing data helps improve the design and analysis of high-dimensional studies by informing better data cleaning and preprocessing strategies.
-
-## Dataset Information
-- **Source**: Havard Dataset (https://dataverse.harvard.edu/dataset.xhtml;jsessionid=27101bc602061041cf162b2c3678?persistentId=doi%3A10.7910%2FDVN%2FJDRJGY&version=&q=&fileAccess=&fileTag=&fileSortField=&fileSortOrder=
-- **Sample Size**: 480 samples, 150 features
-
-## How to Use
-- To explore the static plots, open `interactive_plot.R` and run it.
-- To launch the dashboard, open `shiny.Rmd` and run the Shiny app.
+3. Then run the rest of app.R to launch the dashboard:
+```r
+shiny::runApp("app.R")
+```

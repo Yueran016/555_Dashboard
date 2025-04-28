@@ -1,0 +1,149 @@
+---
+title: "Final PCA Dashboard"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+# Load required libraries
+library(shiny)
+library(plotly)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(missMDA)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+```
+
+```{r global, include=FALSE}
+# --- Data loading and PCA processing (original code) ---
+feature_table <- readRDS("data/data17")
+cols_meta <- 2
+DF <- feature_table[, -c(1:cols_meta)]
+df_ft <- cbind(feature_table[, 1:cols_meta], DF)
+metadata <- feature_table[, 1:cols_meta]
+metadata$Sample_type <- sample(c("S1","S2","S3","S4"), nrow(metadata), replace = TRUE)
+
+imputed <- imputePCA(DF, ncp = 2)
+df_imputed <- imputed$completeObs
+pca_res <- prcomp(df_imputed, scale = TRUE)
+pca_nc <- data.frame(pca_res$x)
+pca_nc$sum_sample_int <- rowSums(df_imputed)
+pca_nc <- cbind(pca_nc, metadata)
+
+# ANOVA tests
+pc1_anova <- summary(aov(PC1 ~ batch, data = pca_nc))
+pc2_anova <- summary(aov(PC2 ~ batch, data = pca_nc))
+int_anova <- summary(aov(sum_sample_int ~ batch, data = pca_nc))
+
+# Color scales
+batches <- unique(metadata$batch)
+ci <- brewer.pal(max(3, length(batches)), "Dark2")[1:length(batches)]
+
+# Build ggplot lists p, t, s
+p <- list(
+  ggplot(pca_nc, aes(x = seq_along(sum_sample_int), y = sum_sample_int, fill = factor(batch))) +
+    geom_bar(stat = "identity") + scale_fill_manual(values = ci) +
+    labs(x = "Sample number", y = "Sum Intensity") +
+    ggtitle(paste0("Sum intensity; p=", round(int_anova[[1]]$`Pr(>F)`[1],4))),
+  ggplot(pca_nc, aes(x = PC1, y = PC2, color = factor(batch))) + geom_point() +
+    scale_color_manual(values = ci) + ggtitle("PC1 vs PC2"),
+  ggplot(pca_nc, aes(x = factor(batch), y = PC1, color = factor(batch))) + geom_jitter() +
+    ggtitle(paste0("PC1; p=", round(pc1_anova[[1]]$`Pr(>F)`[1],4))),
+  ggplot(pca_nc, aes(x = factor(batch), y = PC2, color = factor(batch))) + geom_jitter() +
+    ggtitle(paste0("PC2; p=", round(pc2_anova[[1]]$`Pr(>F)`[1],4))),
+  ggplot(pca_nc, aes(x = PC1, y = PC2, color = Sample_type)) + geom_point() +
+    scale_color_brewer(palette = "Dark2") + ggtitle("PC1 vs PC2 by Sample Type")
+)
+# Create zeroed versions
+df10 <- df_ft; df25 <- df_ft
+th10 <- apply(df_ft[, -(1:cols_meta)], 2, quantile, 0.10, na.rm=TRUE)
+th25 <- apply(df_ft[, -(1:cols_meta)], 2, quantile, 0.25, na.rm=TRUE)
+for(i in 3:ncol(df10)) df10[,i] <- ifelse(df10[,i] < th10[i-2], 0, df10[,i])
+for(i in 3:ncol(df25)) df25[,i] <- ifelse(df25[,i] < th25[i-2], 0, df25[,i])
+# Re-run PCA for each zero version
+gen_plist <- function(dat) {
+  im <- imputePCA(dat[, -(1:cols_meta)], ncp=2)$completeObs
+  pc <- prcomp(im, scale=TRUE)
+  df <- data.frame(pc$x)
+  df$sum_sample_int <- rowSums(im)
+  df <- cbind(df, metadata)
+  list(
+    ggplot(df, aes(x=seq_along(sum_sample_int), y=sum_sample_int, fill=factor(batch))) +
+      geom_bar(stat="identity") + scale_fill_manual(values = ci) +
+      labs(x="Sample number", y="Sum Intensity") +
+      ggtitle(paste0("Sum intensity; p=", round(summary(aov(sum_sample_int~batch, df))[[1]]$`Pr(>F)`[1],4))),
+    ggplot(df, aes(x=PC1, y=PC2, color=factor(batch))) + geom_point() + scale_color_manual(values=ci) + ggtitle("PC1 vs PC2"),
+    ggplot(df, aes(x=factor(batch), y=PC1, color=factor(batch))) + geom_jitter() + ggtitle(paste0("PC1; p=", round(summary(aov(PC1~batch, df))[[1]]$`Pr(>F)`[1],4))),
+    ggplot(df, aes(x=factor(batch), y=PC2, color=factor(batch))) + geom_jitter() + ggtitle(paste0("PC2; p=", round(summary(aov(PC2~batch, df))[[1]]$`Pr(>F)`[1],4)))
+  )
+}
+t <- gen_plist(df10)
+s <- gen_plist(df25)
+# Convert to plotly
+plist_interactive <- lapply(p, ggplotly)
+tlist_interactive <- lapply(t, ggplotly)
+slist_interactive <- lapply(s, ggplotly)
+```
+
+```{r ui, echo=FALSE}
+ui <- navbarPage(
+  "PCA Dashboard",
+  tabPanel("Interactive Plots",
+    fluidPage(
+      tags$a(href="https://github.com/Yueran016/555_Dashboard","View Source Code on GitHub",target="_blank"),
+      br(),
+      sidebarLayout(
+        sidebarPanel(
+          selectInput("data_choice","Choose Data:",choices=c("Original"="p","10% zero"="t","25% zero"="s")),
+          actionButton("plot1","Sum Intensity"), actionButton("plot2","PC1 vs PC2"),
+          actionButton("plot3","PC1"), actionButton("plot4","PC2")
+        ),
+        mainPanel(plotlyOutput("selected_plot"))
+      ),
+      br(), p("This dashboard explores how missing data affect PCA performance."),
+      p("It provides insights for improving batch correction in metabolomics studies.")
+    )
+  ),
+  tabPanel("PC1 vs PC2 by Sample Type",
+    fluidPage(plotlyOutput("custom_plot"))
+  ),
+  tabPanel("Dataset Description",
+    fluidPage(
+      h4("Dataset Summary"),
+      p("• Source: ",tags$a(href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/JDRJGY","Harvard Dataverse: GC/MS Simulated Data",target="_blank")),
+      p("• Sample size: 480 samples × 150 small molecule features."),
+      p("• Collection method: Simulated gas chromatography-mass spectrometry data with missing values."),
+      p("• Study population: Not applicable (simulated dataset)."),
+      p("• Time period: Not applicable (simulation date not specified).")
+    )
+  ),
+  tabPanel("Source Code",
+    fluidPage(
+      h4("Source Code"),
+      tags$a(href="https://github.com/Yueran016/555_Dashboard","GitHub Repository",target="_blank"),
+      verbatimTextOutput("repo_code")
+    )
+  )
+)
+```
+
+```{r server, include=FALSE}
+server <- function(input, output, session) {
+  current_plot <- reactiveVal(1)
+  observeEvent(input$plot1, { current_plot(1) })
+  observeEvent(input$plot2, { current_plot(2) })
+  observeEvent(input$plot3, { current_plot(3) })
+  observeEvent(input$plot4, { current_plot(4) })
+  output$selected_plot <- renderPlotly({
+    switch(input$data_choice,
+           p = plist_interactive,
+           t = tlist_interactive,
+           s = slist_interactive)[[current_plot()]]
+  })
+  output$custom_plot <- renderPlotly({ plist_interactive[[5]] })
+  output$repo_code <- renderText({ paste(readLines("interactive_plot.R"), collapse = "\n") })
+}
+
+shinyApp(ui, server)
+```
