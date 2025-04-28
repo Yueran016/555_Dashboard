@@ -124,16 +124,18 @@ s_list_interactive <- lapply(s_list, ggplotly)
 #
 ui <- dashboardPage(
   dashboardHeader(
-    title = "My Shiny Dashboard",
-    dropdownMenu(type = "notifications",
-                 notificationItem(
-                   text = a("Find (GitHub)",
-                            href = "https://github.com/Yueran016/555_Dashboard",
-                            target = "_blank"),
-                   icon = icon("github")
-                 )
+    title = "Yueran‘s Dashboard",
+    tags$li(
+      a(
+        href = "https://github.com/Yueran016/555_Dashboard",
+        icon("github"), "GitHub Link",
+        title = "View on GitHub",
+        target = "_blank"
+      ),
+      class = "dropdown"
     )
   ),
+
   dashboardSidebar(
     sidebarMenu(
       menuItem("Batch Correction Plots", tabName = "plots1", icon = icon("chart-bar")),
